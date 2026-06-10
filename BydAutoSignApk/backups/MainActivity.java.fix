@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.content.SharedPreferences;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -21,7 +20,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        SharedPreferences prefs = getSharedPreferences("sign_in_schedule", MODE_PRIVATE);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -65,11 +63,7 @@ public class MainActivity extends Activity {
 
         timePicker = new TimePicker(this);
         timePicker.setIs24HourView(true);
-        setTimePickerValue(
-                timePicker,
-                prefs.getInt("hour", 8),
-                prefs.getInt("minute", 30)
-        );
+        setTimePickerValue(timePicker, 8, 30);
         LinearLayout.LayoutParams pickerParams = fullWidth();
         pickerParams.setMargins(0, dp(18), 0, 0);
         root.addView(timePicker, pickerParams);

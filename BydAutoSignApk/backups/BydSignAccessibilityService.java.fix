@@ -2,10 +2,6 @@ package com.example.bydautosign;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -21,9 +17,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Toast;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -39,8 +33,6 @@ public class BydSignAccessibilityService extends AccessibilityService {
     private static final String[] SIGN_IN_TEXTS = {"签到", "每日签到", "立即签到", "去签到"};
     private static final String[] DONE_TEXTS = {"签到成功", "已签到", "今日已签到", "连续签到", "明天再来"};
     private static final String[] DISMISS_TEXTS = {"暂不", "暂不升级", "以后再说", "下次再说", "取消", "关闭", "我知道了"};
-    private static final String NOTIFICATION_CHANNEL_ID = "byd_auto_sign_channel";
-    private static final int NOTIFICATION_ID = 1001;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private volatile boolean running;
@@ -51,7 +43,6 @@ public class BydSignAccessibilityService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
-        startForegroundNotification();
         registerRunReceiver();
         show("比亚迪自动签到服务已开启");
         if (consumePendingRun()) {
@@ -59,51 +50,16 @@ public class BydSignAccessibilityService extends AccessibilityService {
         }
     }
 
-    private void startForegroundNotification() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    "签到服务",
-                    NotificationManager.IMPORTANCE_MIN
-            );
-            channel.setDescription("保持签到服务后台运行");
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            if (nm != null) {
-                nm.createNotificationChannel(channel);
-            }
-        }
-        Intent openIntent = new Intent(this, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                this, 0, openIntent,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                        ? PendingIntent.FLAG_IMMUTABLE : 0
-        );
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder = new Notification.Builder(this, NOTIFICATION_CHANNEL_ID);
-        } else {
-            builder = new Notification.Builder(this);
-        }
-        Notification notification = builder
-                .setContentTitle("比亚迪自动签到")
-                .setContentText("签到服务运行中")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .build();
-        startForeground(NOTIFICATION_ID, notification);
-    }
-
     @Override
     public void onDestroy() {
         unregisterRunReceiver();
         releaseWakeLock();
-        stopForeground(true);
         super.onDestroy();
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        // 流程由按钮或广播触发，这里只需要保持服务可用。
     }
 
     @Override
@@ -182,13 +138,13 @@ public class BydSignAccessibilityService extends AccessibilityService {
     private void runSignInFlow() throws Exception {
         bydPackageName = findPackageByLabel(APP_NAME);
         if (bydPackageName == null) {
-            throw new Exception("未找到名为" + APP_NAME + "的 APP");
+            throw new Exception("未找到名为“" + APP_NAME + "”的 APP");
         }
 
-        show("打开" + APP_NAME + "");
+        show("打开“" + APP_NAME + "”");
         Intent launchIntent = getPackageManager().getLaunchIntentForPackage(bydPackageName);
         if (launchIntent == null) {
-            throw new Exception("无法启动" + APP_NAME + "");
+            throw new Exception("无法启动“" + APP_NAME + "”");
         }
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(launchIntent);
@@ -196,14 +152,14 @@ public class BydSignAccessibilityService extends AccessibilityService {
         sleep(1000L);
         closeKnownPopups();
 
-        show("进入我的");
+        show("进入“我的”");
         if (!clickTexts(MINE_TEXTS, PAGE_TIMEOUT_MS, true)) {
             clickByRatio(0.88f, 0.94f);
         }
         sleep(1200L);
         closeKnownPopups();
 
-        show("点击签到");
+        show("点击“签到”");
         if (!clickTexts(SIGN_IN_TEXTS, PAGE_TIMEOUT_MS, false) && !clickTopRightText(SIGN_IN_TEXTS)) {
             clickByRatio(0.88f, 0.08f);
         }
@@ -266,14 +222,8 @@ public class BydSignAccessibilityService extends AccessibilityService {
         for (AccessibilityNodeInfo node : nodes) {
             node.getBoundsInScreen(bounds);
             if (bounds.centerX() > width * 0.55f && bounds.centerY() < height * 0.25f) {
-                for (AccessibilityNodeInfo other : nodes) {
-                    if (other != node) other.recycle();
-                }
                 return clickNode(node);
             }
-        }
-        for (AccessibilityNodeInfo node : nodes) {
-            node.recycle();
         }
         return false;
     }
@@ -293,11 +243,7 @@ public class BydSignAccessibilityService extends AccessibilityService {
             right.getBoundsInScreen(b);
             return preferBottom ? Integer.compare(b.centerY(), a.centerY()) : Integer.compare(a.top, b.top);
         });
-        AccessibilityNodeInfo result = nodes.get(0);
-        for (int i = 1; i < nodes.size(); i++) {
-            nodes.get(i).recycle();
-        }
-        return result;
+        return nodes.get(0);
     }
 
     private List<AccessibilityNodeInfo> findCandidateNodes(String[] texts, boolean exactOnly) {
@@ -310,39 +256,30 @@ public class BydSignAccessibilityService extends AccessibilityService {
         for (String text : texts) {
             collectByText(root, text, exactOnly, dedup, result);
         }
-        root.recycle();
         return result;
     }
 
     private void collectByText(
-            AccessibilityNodeInfo root,
+            AccessibilityNodeInfo node,
             String target,
             boolean exactOnly,
             Set<AccessibilityNodeInfo> dedup,
             List<AccessibilityNodeInfo> out
     ) {
-        Deque<AccessibilityNodeInfo> stack = new ArrayDeque<>();
-        stack.push(root);
-        while (!stack.isEmpty()) {
-            AccessibilityNodeInfo node = stack.pop();
-            if (node == null) {
-                continue;
+        if (node == null) {
+            return;
+        }
+        CharSequence text = node.getText();
+        CharSequence desc = node.getContentDescription();
+        if (matches(text, target, exactOnly) || matches(desc, target, exactOnly)) {
+            android.graphics.Rect bounds = new android.graphics.Rect();
+            node.getBoundsInScreen(bounds);
+            if (!bounds.isEmpty() && dedup.add(node)) {
+                out.add(node);
             }
-            CharSequence text = node.getText();
-            CharSequence desc = node.getContentDescription();
-            if (matches(text, target, exactOnly) || matches(desc, target, exactOnly)) {
-                android.graphics.Rect bounds = new android.graphics.Rect();
-                node.getBoundsInScreen(bounds);
-                if (!bounds.isEmpty() && dedup.add(node)) {
-                    out.add(node);
-                }
-            }
-            for (int i = 0; i < node.getChildCount(); i++) {
-                AccessibilityNodeInfo child = node.getChild(i);
-                if (child != null) {
-                    stack.push(child);
-                }
-            }
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            collectByText(node.getChild(i), target, exactOnly, dedup, out);
         }
     }
 
@@ -356,42 +293,26 @@ public class BydSignAccessibilityService extends AccessibilityService {
 
     private boolean clickNode(AccessibilityNodeInfo node) {
         AccessibilityNodeInfo current = node;
-        AccessibilityNodeInfo previous = null;
-        try {
-            while (current != null) {
-                if (current.isClickable() && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                    sleep(800L);
-                    return true;
-                }
-                if (previous != null) {
-                    previous.recycle();
-                }
-                previous = current;
-                current = current.getParent();
+        while (current != null) {
+            if (current.isClickable() && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                sleep(800L);
+                return true;
             }
-            if (previous != null) {
-                previous.recycle();
-            }
-
-            android.graphics.Rect bounds = new android.graphics.Rect();
-            node.getBoundsInScreen(bounds);
-            if (!bounds.isEmpty()) {
-                return clickPoint(bounds.centerX(), bounds.centerY());
-            }
-            return false;
-        } finally {
-            node.recycle();
+            current = current.getParent();
         }
+
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        node.getBoundsInScreen(bounds);
+        if (!bounds.isEmpty()) {
+            return clickPoint(bounds.centerX(), bounds.centerY());
+        }
+        return false;
     }
 
     private void closeKnownPopups() {
         for (int i = 0; i < 3; i++) {
             AccessibilityNodeInfo node = findClickableText(DISMISS_TEXTS, false);
-            if (node == null) {
-                return;
-            }
-            boolean clicked = clickNode(node);
-            if (!clicked) {
+            if (node == null || !clickNode(node)) {
                 return;
             }
             sleep(700L);
@@ -413,12 +334,7 @@ public class BydSignAccessibilityService extends AccessibilityService {
     }
 
     private boolean existsAnyText(String[] texts) {
-        List<AccessibilityNodeInfo> nodes = findCandidateNodes(texts, false);
-        boolean found = !nodes.isEmpty();
-        for (AccessibilityNodeInfo node : nodes) {
-            node.recycle();
-        }
-        return found;
+        return !findCandidateNodes(texts, false).isEmpty();
     }
 
     private void exitTargetApp() {
@@ -434,16 +350,10 @@ public class BydSignAccessibilityService extends AccessibilityService {
 
     private String getCurrentPackage() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        try {
-            if (root == null || root.getPackageName() == null) {
-                return null;
-            }
-            return root.getPackageName().toString();
-        } finally {
-            if (root != null) {
-                root.recycle();
-            }
+        if (root == null || root.getPackageName() == null) {
+            return null;
         }
+        return root.getPackageName().toString();
     }
 
     private boolean clickByRatio(float xRatio, float yRatio) {

@@ -21,17 +21,13 @@ final class AlarmScheduler {
     }
 
     static void saveAndSchedule(Context context, int hour, int minute) {
-        try {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .edit()
-                    .putBoolean(KEY_ENABLED, true)
-                    .putInt(KEY_HOUR, hour)
-                    .putInt(KEY_MINUTE, minute)
-                    .apply();
-            scheduleNext(context, hour, minute);
-        } catch (Exception ignored) {
-            // 某些 OEM ROM 可能抛出异常，静默处理
-        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_HOUR, hour)
+                .putInt(KEY_MINUTE, minute)
+                .apply();
+        scheduleNext(context, hour, minute);
     }
 
     static void scheduleSavedIfEnabled(Context context) {
@@ -72,9 +68,7 @@ final class AlarmScheduler {
 
         long triggerAtMillis = nextTriggerAtMillis(hour, minute);
         PendingIntent pendingIntent = buildPendingIntent(context, PendingIntent.FLAG_UPDATE_CURRENT);
-        boolean useExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
-                || alarmManager.canScheduleExactAlarms();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && useExact) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             Intent showIntent = new Intent(context, MainActivity.class);
             PendingIntent showPendingIntent = PendingIntent.getActivity(
                     context,
@@ -87,7 +81,7 @@ final class AlarmScheduler {
                     pendingIntent
             );
         } else {
-            alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent);
+            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent);
         }
     }
 
