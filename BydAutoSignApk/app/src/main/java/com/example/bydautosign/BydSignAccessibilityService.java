@@ -12,7 +12,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.app.KeyguardManager;
 import android.graphics.Path;
 import android.os.Build;
 import android.os.Handler;
@@ -236,18 +235,7 @@ public class BydSignAccessibilityService extends AccessibilityService {
     }
 
     private void ensureAppForeground() {
-        // 1) 唤醒屏幕并尝试解除锁屏
-        try {
-            KeyguardManager keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-            if (keyguardManager != null && keyguardManager.isKeyguardLocked()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    performGlobalAction(GLOBAL_ACTION_DISMISS_KEYGUARD);
-                    sleep(1000L);
-                }
-            }
-        } catch (Exception ignored) {
-        }
-
+        // 1) 等待窗口系统就绪
         if (getRootInActiveWindow() == null) {
             sleep(WAKE_WARMUP_MS);
         }
