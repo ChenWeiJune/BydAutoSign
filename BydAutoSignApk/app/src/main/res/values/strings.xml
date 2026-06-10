@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">比亚迪自动签到</string>
+    <string name="accessibility_service_label">比亚迪自动签到服务</string>
+    <string name="accessibility_service_description">打开比亚迪 APP，进入我的页面，点击签到并退出。</string>
+</resources>
