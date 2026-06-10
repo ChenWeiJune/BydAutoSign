@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.app.KeyguardManager;
 import android.graphics.Path;
 import android.os.Build;
 import android.os.Handler;
@@ -27,12 +28,15 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public class BydSignAccessibilityService extends AccessibilityService {
     private static final String APP_NAME = "比亚迪";
     private static final String PREFS = "sign_in_schedule";
     private static final String KEY_PENDING_RUN = "pending_run";
-    private static final long LAUNCH_TIMEOUT_MS = 20000L;
+    private static final long LAUNCH_TIMEOUT_MS = 30000L;
+    private static final long WAKE_WARMUP_MS = 2000L;
     private static final long PAGE_TIMEOUT_MS = 15000L;
     private static final long POLL_INTERVAL_MS = 500L;
     private static final String[] MINE_TEXTS = {"我的", "我"};
@@ -47,6 +51,9 @@ public class BydSignAccessibilityService extends AccessibilityService {
     private BroadcastReceiver runReceiver;
     private PowerManager.WakeLock wakeLock;
     private String bydPackageName;
+    private String cachedBydPackageName;
+    private long cachedPackageNameTime;
+    private static final long PACKAGE_CACHE_TTL_MS = 600000L;
 
     @Override
     protected void onServiceConnected() {
@@ -180,17 +187,20 @@ public class BydSignAccessibilityService extends AccessibilityService {
     }
 
     private void runSignInFlow() throws Exception {
-        bydPackageName = findPackageByLabel(APP_NAME);
+        bydPackageName = resolveBydPackageName();
         if (bydPackageName == null) {
             throw new Exception("未找到名为" + APP_NAME + "的 APP");
         }
 
         show("打开" + APP_NAME + "");
+        ensureAppForeground();
+
         Intent launchIntent = getPackageManager().getLaunchIntentForPackage(bydPackageName);
         if (launchIntent == null) {
             throw new Exception("无法启动" + APP_NAME + "");
         }
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
         startActivity(launchIntent);
         waitForPackage(bydPackageName, LAUNCH_TIMEOUT_MS);
         sleep(1000L);
@@ -210,6 +220,56 @@ public class BydSignAccessibilityService extends AccessibilityService {
 
         waitForSignInResult();
         exitTargetApp();
+    }
+
+    private String resolveBydPackageName() {
+        if (cachedBydPackageName != null
+                && System.currentTimeMillis() - cachedPackageNameTime < PACKAGE_CACHE_TTL_MS) {
+            return cachedBydPackageName;
+        }
+        String pkg = findPackageByLabel(APP_NAME);
+        if (pkg != null) {
+            cachedBydPackageName = pkg;
+            cachedPackageNameTime = System.currentTimeMillis();
+        }
+        return pkg;
+    }
+
+    private void ensureAppForeground() {
+        // 1) 唤醒屏幕并尝试解除锁屏
+        try {
+            KeyguardManager keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (keyguardManager != null && keyguardManager.isKeyguardLocked()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    performGlobalAction(GLOBAL_ACTION_DISMISS_KEYGUARD);
+                    sleep(1000L);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (getRootInActiveWindow() == null) {
+            sleep(WAKE_WARMUP_MS);
+        }
+
+        // 2) 确保 APP 在前台，绕过后台 Activity 启动限制
+        String currentPkg = getCurrentPackage();
+        if (currentPkg != null && getPackageName().equals(currentPkg)) {
+            return;
+        }
+
+        Intent mainIntent = new Intent(this, MainActivity.class);
+        mainIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(mainIntent);
+
+        long end = System.currentTimeMillis() + 5000L;
+        while (System.currentTimeMillis() < end) {
+            if (getPackageName().equals(getCurrentPackage())) {
+                return;
+            }
+            sleep(POLL_INTERVAL_MS);
+        }
+        show("未检测到 APP 前台，继续执行...");
     }
 
     private String findPackageByLabel(String label) {
@@ -233,10 +293,21 @@ public class BydSignAccessibilityService extends AccessibilityService {
     }
 
     private void waitForPackage(String packageName, long timeoutMs) throws Exception {
+        int consecutiveNullCount = 0;
         long end = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < end) {
-            if (packageName.equals(getCurrentPackage())) {
+            String currentPkg = getCurrentPackage();
+            if (packageName.equals(currentPkg)) {
                 return;
+            }
+            if (currentPkg == null) {
+                consecutiveNullCount++;
+                if (consecutiveNullCount >= 6) {
+                    ensureAppForeground();
+                    consecutiveNullCount = 0;
+                }
+            } else {
+                consecutiveNullCount = 0;
             }
             sleep(POLL_INTERVAL_MS);
         }
@@ -355,6 +426,9 @@ public class BydSignAccessibilityService extends AccessibilityService {
     }
 
     private boolean clickNode(AccessibilityNodeInfo node) {
+        android.graphics.Rect nodeBounds = new android.graphics.Rect();
+        node.getBoundsInScreen(nodeBounds);
+
         AccessibilityNodeInfo current = node;
         AccessibilityNodeInfo previous = null;
         try {
@@ -373,10 +447,8 @@ public class BydSignAccessibilityService extends AccessibilityService {
                 previous.recycle();
             }
 
-            android.graphics.Rect bounds = new android.graphics.Rect();
-            node.getBoundsInScreen(bounds);
-            if (!bounds.isEmpty()) {
-                return clickPoint(bounds.centerX(), bounds.centerY());
+            if (!nodeBounds.isEmpty()) {
+                return clickPoint(nodeBounds.centerX(), nodeBounds.centerY());
             }
             return false;
         } finally {
@@ -460,15 +532,26 @@ public class BydSignAccessibilityService extends AccessibilityService {
         path.moveTo(x, y);
         GestureDescription.StrokeDescription stroke = new GestureDescription.StrokeDescription(path, 0L, 80L);
         GestureDescription gesture = new GestureDescription.Builder().addStroke(stroke).build();
-        final boolean[] completed = {false};
+        final CountDownLatch latch = new CountDownLatch(1);
+        final boolean[] success = {false};
         dispatchGesture(gesture, new GestureResultCallback() {
             @Override
             public void onCompleted(GestureDescription gestureDescription) {
-                completed[0] = true;
+                success[0] = true;
+                latch.countDown();
+            }
+
+            @Override
+            public void onCancelled(GestureDescription gestureDescription) {
+                latch.countDown();
             }
         }, handler);
-        sleep(400L);
-        return completed[0];
+        try {
+            latch.await(1500L, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return success[0];
     }
 
     private void keepScreenAwake() {

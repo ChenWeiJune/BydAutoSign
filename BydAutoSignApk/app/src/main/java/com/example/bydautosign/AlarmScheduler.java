@@ -15,6 +15,7 @@ final class AlarmScheduler {
     private static final String KEY_ENABLED = "enabled";
     private static final String KEY_HOUR = "hour";
     private static final String KEY_MINUTE = "minute";
+    private static final String KEY_PENDING_RUN = "pending_run";
     private static final int REQUEST_CODE = 1001;
 
     private AlarmScheduler() {
@@ -46,6 +47,7 @@ final class AlarmScheduler {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_ENABLED, false)
+                .putBoolean(KEY_PENDING_RUN, false)
                 .apply();
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (alarmManager != null) {
